@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from collections import OrderedDict
 import json
+from typing import List, Optional, Union
 
 import numpy as np
 import torch
@@ -23,6 +24,7 @@ from loss import SILoss
 from utils import load_encoders
 
 from dataset import CustomDataset
+from json_label_dataset import JsonLabelDataset
 from preprocessing.encoders import load_invae
 # import wandb_utils
 import wandb
@@ -32,8 +34,42 @@ from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from torchvision.transforms import Normalize
 from samplers import euler_maruyama_sampler
 from PIL import Image
+from modelscope import CLIPModel, CLIPProcessor, CLIPConfig
 
 logger = get_logger(__name__)
+
+
+def get_clip_prompt_embeds(
+        tokenizer,
+        text_encoder,
+        prompt: Union[str, List[str]],
+        device: Optional[torch.device] = None,
+):
+    """Get CLIP text embeddings for prompts.
+    
+    Reference: img_label_dataset.py get_clip_prompt_embeds()
+    """
+    prompt = [prompt] if isinstance(prompt, str) else prompt
+    batch_size = len(prompt)
+
+    text_inputs = tokenizer(
+        prompt,
+        padding="max_length",
+        max_length=77,
+        truncation=True,
+        return_overflowing_tokens=False,
+        return_length=False,
+        return_tensors="pt",
+    )
+
+    text_input_ids = text_inputs.input_ids
+    prompt_embeds = text_encoder(text_input_ids.to(device), output_hidden_states=False)
+    # Use pooled output of CLIPTextModel
+    prompt_embeds = prompt_embeds.pooler_output
+    prompt_embeds = prompt_embeds.to(device=device)
+
+    return prompt_embeds
+
 
 def preprocess_raw_image(x, enc_type):
     resolution = x.shape[-1]
@@ -158,6 +194,26 @@ def main(args):
     vae = load_invae(args.vae_name, device=device)
     vae.eval().requires_grad_(False)
     channels = 32  # invae uses 32 channels
+
+    # Load CLIP model for text encoding (only when using JsonLabelDataset)
+    clip_model = None
+    clip_tokenizer = None
+    if args.use_json_dataset:
+        clip_model_id = args.clip_model_id
+        if accelerator.is_main_process:
+            logger.info(f"Loading CLIP model: {clip_model_id}")
+        clip_config = CLIPConfig.from_pretrained(clip_model_id)
+        clip_model = CLIPModel.from_pretrained(
+            clip_model_id, torch_dtype=torch.float32, config=clip_config
+        ).to(device)
+        clip_model.eval()
+        clip_model.requires_grad_(False)
+        clip_processor = CLIPProcessor.from_pretrained(
+            clip_model_id, padding="max_length", max_length=77,
+            return_tensors="pt", truncation=True
+        )
+        clip_tokenizer = clip_processor.tokenizer
+        clip_text_encoder = clip_model.text_model
     
     # invae uses 0.3099 scaling factor
     scaling_factor = 0.3099
@@ -208,7 +264,12 @@ def main(args):
     )    
     
     # Setup data:
-    train_dataset = CustomDataset(args.data_dir)
+    if args.use_json_dataset:
+        train_dataset = JsonLabelDataset(args.data_dir, label_file=args.label_file)
+        if accelerator.is_main_process:
+            logger.info(f"Using JsonLabelDataset with label file: {args.label_file}")
+    else:
+        train_dataset = CustomDataset(args.data_dir)
     local_batch_size = int(args.batch_size // accelerator.num_processes)
     train_dataloader = DataLoader(
         train_dataset,
@@ -286,9 +347,20 @@ def main(args):
         for raw_image, x, y in train_dataloader:
             raw_image = raw_image.to(device)
             x = x.squeeze(dim=1).to(device)
-            y = y.to(device)
+            
+            # Handle labels based on dataset type
+            if args.use_json_dataset:
+                # y is a list of text captions, convert to CLIP embeddings
+                with torch.no_grad():
+                    labels = get_clip_prompt_embeds(
+                        clip_tokenizer, clip_text_encoder, y, device=device
+                    )
+            else:
+                # y is already class labels tensor
+                y = y.to(device)
+                labels = y
+            
             z = None
-            labels = y
             with torch.no_grad():
                 x = sample_posterior(x, latents_scale=latents_scale, latents_bias=latents_bias)
                 zs = []
@@ -425,6 +497,9 @@ def parse_args(input_args=None):
     parser.add_argument("--resolution", type=int, choices=[256, 512], default=256)
     parser.add_argument("--batch-size", type=int, default=8)#256
     parser.add_argument("--vae-name", type=str, default="REPA-E/e2e-invae")
+    parser.add_argument("--use-json-dataset", action="store_true", help="Use JsonLabelDataset with text captions")
+    parser.add_argument("--label-file", type=str, default=None, help="Path to JSON label file for JsonLabelDataset")
+    parser.add_argument("--clip-model-id", type=str, default="AI-ModelScope/CLIP-GmP-ViT-L-14", help="CLIP model ID for text encoding")
 
     # precision
     parser.add_argument("--allow-tf32", action="store_true")

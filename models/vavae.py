@@ -15,7 +15,19 @@ import numpy as np
 from PIL import Image
 from omegaconf import OmegaConf
 from torchvision import transforms
-from autoencoder import AutoencoderKL
+import os
+import sys
+
+# Handle imports for different execution contexts
+try:
+    from .autoencoder import AutoencoderKL
+except ImportError:
+    try:
+        from autoencoder import AutoencoderKL
+    except ImportError:
+        # Fallback: add models directory to sys.path
+        sys.path.append(os.path.dirname(__file__))
+        from autoencoder import AutoencoderKL
 
 class VA_VAE:
     """Vision Foundation Model Aligned VAE Implementation"""

@@ -31,6 +31,7 @@ from encoders import InvaeEncoder, VavaeEncoder
 class ImageEntry:
     img: np.ndarray
     label: Optional[int]
+    fname: Optional[str] = None  # Original filename (relative path without extension)
 
 #----------------------------------------------------------------------------
 # Parse a 'M,N' or 'MxN' integer tuple.
@@ -96,7 +97,9 @@ def open_image_folder(source_dir, *, max_images: Optional[int]) -> tuple[int, It
     def iterate_images():
         for idx, fname in enumerate(input_images):
             img = np.array(PIL.Image.open(fname).convert('RGB'))
-            yield ImageEntry(img=img, label=labels.get(arch_fnames[fname]))
+            # Get relative path without extension as fname for VAVAE
+            rel_fname = os.path.splitext(arch_fnames[fname])[0]
+            yield ImageEntry(img=img, label=labels.get(arch_fnames[fname]), fname=rel_fname)
             if idx >= max_idx - 1:
                 break
     return max_idx, iterate_images()
@@ -121,7 +124,9 @@ def open_image_zip(source, *, max_images: Optional[int]) -> tuple[int, Iterator[
             for idx, fname in enumerate(input_images):
                 with z.open(fname, 'r') as file:
                     img = np.array(PIL.Image.open(file).convert('RGB'))
-                yield ImageEntry(img=img, label=labels.get(fname))
+                # Get relative path without extension as fname for VAVAE
+                rel_fname = os.path.splitext(fname)[0]
+                yield ImageEntry(img=img, label=labels.get(fname), fname=rel_fname)
                 if idx >= max_idx - 1:
                     break
     return max_idx, iterate_images()
@@ -278,6 +283,8 @@ def encode_image_worker_vavae(args):
     """Worker function for parallel VAE encoding (VAVAE).
     
     Uses VA_VAE from models/vavae.py with encode_images() method.
+    VAVAE does not require labels - only encodes images to latents.
+    Returns (idx, latents, fname) where fname is the original filename.
     """
     gpu_id, batch_data, config_path = args
     os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
@@ -289,7 +296,8 @@ def encode_image_worker_vavae(args):
     for idx, image_data in batch_data:
         img_tensor = torch.tensor(image_data.img).to('cuda').permute(2, 0, 1).unsqueeze(0)
         latents = vae.encode(img_tensor).cpu().numpy()
-        results.append((idx, latents, image_data.label))
+        # Store index, latents, and original filename
+        results.append((idx, latents, image_data.fname))
 
     
     return results
@@ -574,6 +582,8 @@ def encode_vavae(
     This command uses the VA_VAE class from models/vavae.py which requires
     a config yaml file specifying model parameters and checkpoint path.
     
+    NOTE: VAVAE does not require or save labels. Only latent features are saved.
+    
     Parallelization and Memory Management:
     
     Use --gpus to control the number of GPUs used for parallel encoding
@@ -599,14 +609,13 @@ def encode_vavae(
     num_files, input_iter = open_dataset(source, max_images=max_images)
     archive_root_dir, save_bytes, close_dest = open_dest(dest)
     
-    # Process images in batches across GPUs to avoid loading everything into memory
-    labels = []
+    # VAVAE does not need labels - only save latents
     
     print(f"Processing {num_files} images with VAVAE in batches of {batch_size * gpus} across {gpus} GPUs...")
     print(f"Using config: {config}")
+    print("Note: VAVAE does not require labels - only saving latent features.")
     
     with mp.Pool(gpus) as pool:
-        batch = []
         gpu_batches = [[] for _ in range(gpus)]
         
         for idx, image in tqdm(enumerate(input_iter), total=num_files, desc="Encoding images with VAVAE"):
@@ -633,21 +642,24 @@ def encode_vavae(
                         current_results.extend([r for r in gpu_result if r is not None])
                     current_results.sort(key=lambda x: x[0])
                     
-                    # Save results from this batch
-                    for result_idx, latents, label in current_results:
-                        idx_str = f'{result_idx:08d}'
-                        archive_fname = f'{idx_str[:5]}/img-latents-{idx_str}.npy'
+                    # Save results from this batch (no labels for VAVAE)
+                    for result_idx, latents, orig_fname in current_results:
+                        # Use original filename to preserve ID for JsonLabelDataset matching
+                        if orig_fname:
+                            archive_fname = f'{orig_fname}.npy'
+                        else:
+                            # Fallback to index-based naming
+                            idx_str = f'{result_idx:08d}'
+                            archive_fname = f'{idx_str[:5]}/img-latents-{idx_str}.npy'
 
                         f = io.BytesIO()
                         np.save(f, latents)
                         save_bytes(os.path.join(archive_root_dir, archive_fname), f.getvalue())
-                        labels.append([archive_fname, label] if label is not None else None)
                 
                 # Clear batches for next iteration
                 gpu_batches = [[] for _ in range(gpus)]
 
-    metadata = {'labels': labels if all(x is not None for x in labels) else None}
-    save_bytes(os.path.join(archive_root_dir, 'dataset.json'), json.dumps(metadata))
+    # VAVAE does not save labels metadata
     close_dest()
 
 #----------------------------------------------------------------------------
