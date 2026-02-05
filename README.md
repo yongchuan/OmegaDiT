@@ -1,5 +1,50 @@
 # OmegaDiT: 基于 VA-VAE 的文本条件扩散模型
 
+**仅 130M 参数，即可实现高质量文本到图像生成。** OmegaDiT 是一个轻量级扩散模型，证明了小参数量模型在合理的架构设计和训练策略下，同样能够生成高质量的图像。
+
+## 生成效果展示
+
+<table>
+  <tr>
+    <td width="25%"><img src="demos/1.png" width="100%"></td>
+    <td width="25%"><img src="demos/2.png" width="100%"></td>
+    <td width="25%"><img src="demos/3.png" width="100%"></td>
+    <td width="25%"><img src="demos/4.png" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Happy dreamy owl monster sitting on a tree branch, colorful glittering particles, forest background, detailed feathers.</sub></td>
+    <td align="center"><sub>Game-Art - An island with different geographical properties and multiple small cities floating in space</sub></td>
+    <td align="center"><sub>A cyberpunk panda is taking a walk on the street</sub></td>
+    <td align="center"><sub>Half human, half robot, repaired human</sub></td>
+  </tr>
+  <tr>
+    <td width="25%"><img src="demos/5.png" width="100%"></td>
+    <td width="25%"><img src="demos/6.png" width="100%"></td>
+    <td width="25%"><img src="demos/7.png" width="100%"></td>
+    <td width="25%"><img src="demos/8.png" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>porcelain girl's face. fine texture. surreal</sub></td>
+    <td align="center"><sub>Poster of a mechanical cat, techical Schematics viewed from front.</sub></td>
+    <td align="center"><sub>a car runing on the sand.</sub></td>
+    <td align="center"><sub>a highly detailed anime sexy beauty with big breasts.</sub></td>
+  </tr>
+  <tr>
+    <td width="25%"><img src="demos/9.png" width="100%"></td>
+    <td width="25%"><img src="demos/10.png" width="100%"></td>
+    <td width="25%"><img src="demos/11.png" width="100%"></td>
+    <td width="25%"><img src="demos/12.png" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>A cat</sub></td>
+    <td align="center"><sub>fruit cream cake</sub></td>
+    <td align="center"><sub>A cat holding a sign that says hello world</sub></td>
+    <td align="center"><sub>a dog</sub></td>
+  </tr>
+</table>
+
+---
+
 本项目是基于 [SpeedrunDiT](https://github.com/SwayStar123/SpeedrunDiT/) 改造的新版本，主要改进包括：引入 VA-VAE (Vision Foundation Model Aligned VAE) 替代原有的 INVAE，新增文本标签条件支持，以及 CLIP 文本编码器集成。
 
 > **Java 开发者？** 本模型已在 [Omega-AI](https://gitee.com/dromara/omega-ai) 框架中完整实现，支持纯 Java 环境下的推理与训练。 [查看详情 >>](#omega-ai-java-深度学习框架实现)
@@ -15,7 +60,7 @@
 ## 项目结构
 
 ```
-SpeedrunDiT_omega/
+OmegaDiT/
 ├── train.py                    # 核心训练脚本 (Accelerate 分布式)
 ├── generate.py                 # 多 GPU 采样脚本
 ├── loss.py                     # 损失函数 (扩散 + 投影 + CFM)
@@ -98,6 +143,14 @@ model:
 ## 数据集准备
 
 本项目使用 **JsonLabelDataset** 数据集格式，支持文本描述作为条件标签。
+
+### 数据集下载
+
+推荐使用以下公开数据集进行训练：
+
+- **text-to-image-2M**: https://huggingface.co/datasets/jackyhate/text-to-image-2M
+
+该数据集包含约 200 万张图像及对应的文本描述，适合用于文本条件扩散模型的训练。
 
 ### 数据目录结构
 
@@ -422,13 +475,6 @@ VA-VAE 解码
 - **CUDA/CUDNN 加速**: GPU 计算支持 NVIDIA CUDA 和 CUDNN 加速
 - **完整的模型支持**: 已实现 OmegaDiT 扩散模型，可直接进行推理和训练
 
-### 快速开始 (Java)
-
-```java
-// 使用 Omega-AI 加载并运行 OmegaDiT 模型
-// 详细使用方法请参考 Omega-AI 官方文档
-```
-
 ### 项目链接
 
 - **Gitee 仓库**: https://gitee.com/dromara/omega-ai
@@ -466,7 +512,9 @@ VA-VAE 解码
 
 ## 引用
 
-如果您使用了本项目，请引用原始 SpeedrunDiT 论文：
+如果您使用了本项目，请引用以下相关论文：
+
+**SR-DiT (SpeedrunDiT)**: https://arxiv.org/abs/2512.12386
 
 ```bibtex
 @misc{bhanded2025speedrundit,
@@ -477,6 +525,20 @@ VA-VAE 解码
   archivePrefix = {arXiv},
   primaryClass  = {cs.CV},
   url           = {https://arxiv.org/abs/2512.12386},
+}
+```
+
+**SPRINT**: https://arxiv.org/abs/2510.21986
+
+```bibtex
+@misc{mukherjee2025sprint,
+  title         = {Sprint: Sparse-Dense Residual Fusion for Efficient Diffusion Transformers},
+  author        = {Dogyun Park, Moayed Haji-Ali,Yanyu Li ,Willi Menapace, Sergey Tulyakov, Hyunwoo J. Kim, Aliaksandr Siarohin, Anil Kag},
+  year          = {2025},
+  eprint        = {2510.21986},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CV},
+  url           = {https://arxiv.org/abs/2510.21986},
 }
 ```
 
