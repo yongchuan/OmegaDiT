@@ -63,6 +63,38 @@ pip install -r requirements.txt
 - timm 1.0.12
 - xformers 0.0.32
 
+### 下载预训练模型
+
+**VA-VAE 模型下载：**
+
+本项目使用 VA-VAE (Vision Foundation Model Aligned VAE) 进行图像编码和解码。需要下载预训练权重：
+
+```bash
+# 创建模型目录
+mkdir -p checkpoints
+
+# 下载 VA-VAE 模型权重
+wget https://huggingface.co/hustvl/vavae-imagenet256-f16d32-dinov2/resolve/main/vavae-imagenet256-f16d32-dinov2.pt \
+    -O checkpoints/vavae-imagenet256-f16d32-dinov2.pt
+```
+
+或者手动下载：
+- **下载地址**: https://huggingface.co/hustvl/vavae-imagenet256-f16d32-dinov2/blob/main/vavae-imagenet256-f16d32-dinov2.pt
+- **放置位置**: 更新配置文件 `tokenizer/configs/vavae_f16d32_vfdinov2.yaml` 中的 `ckpt_path` 为实际路径
+
+配置文件示例：
+
+```yaml
+ckpt_path: /path/to/checkpoints/vavae-imagenet256-f16d32-dinov2.pt
+
+model:
+  target: ldm.models.autoencoder.AutoencoderKL
+  params:
+    embed_dim: 32
+    use_vf: dinov2
+    # ... 其他配置
+```
+
 ## 数据集准备
 
 本项目使用 **JsonLabelDataset** 数据集格式，支持文本描述作为条件标签。
@@ -426,7 +458,7 @@ VA-VAE 解码
 - [REG / REPA](https://github.com/SwayStar123/REG) - 表示对齐方法
 - [SiT](https://github.com/willisma/SiT) - Scalable Interpolant Transformers
 - [DINOv2](https://github.com/facebookresearch/dinov2) - 视觉基础模型
-- [VA-VAE](https://github.com/HUST-VL/VA-VAE) - Vision Foundation Model Aligned VAE (作者: Maple/Jingfeng Yao)
+- [VA-VAE](https://github.com/hustvl/LightningDiT/tree/main/vavae) - Vision Foundation Model Aligned VAE (作者: Maple/Jingfeng Yao)
 - [ADM Evaluations](https://github.com/openai/guided-diffusion) - 评估代码
 - [NVLabs edm2](https://github.com/NVlabs/edm2) - 预处理工具
 
