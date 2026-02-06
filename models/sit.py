@@ -43,19 +43,20 @@ class CaptionEmbedder(nn.Module):
         else:
             drop_ids = force_drop_ids == 1
         caption = torch.where(drop_ids[:, None, None], self.y_embedding, caption)
-        #caption = caption.reshape(caption.shape[0], 77, caption.shape[3])
+        # caption = caption.reshape(caption.shape[0], 77, caption.shape[3])
         return caption
 
     def forward(self, caption, train, force_drop_ids=None):
         use_dropout = self.uncond_prob > 0
-        #print(caption.shape)
+        # print(caption.shape)
         if (train and use_dropout) or (force_drop_ids is not None):
             caption = self.token_drop(caption, force_drop_ids)
         # else:
-            # caption = caption.reshape(caption.shape[0], 77, caption.shape[3])
+        # caption = caption.reshape(caption.shape[0], 77, caption.shape[3])
         caption = self.y_proj(caption)
 
         return caption
+
 
 def build_mlp(hidden_size, projector_dim, z_dim):
     return nn.Sequential(
@@ -66,8 +67,10 @@ def build_mlp(hidden_size, projector_dim, z_dim):
         nn.Linear(projector_dim, z_dim),
     )
 
+
 def modulate(x, shift, scale):
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
+
 
 #################################################################################
 #               Embedding Layers for Timesteps and Class Labels                 #
@@ -76,6 +79,7 @@ class TimestepEmbedder(nn.Module):
     """
     Embeds scalar timesteps into vector representations.
     """
+
     def __init__(self, hidden_size, frequency_embedding_size=256):
         super().__init__()
         self.mlp = nn.Sequential(
@@ -117,6 +121,7 @@ class LabelEmbedder(nn.Module):
     """
     Embeds class labels into vector representations. Also handles label dropout for classifier-free guidance.
     """
+
     def __init__(self, num_classes, hidden_size, dropout_prob):
         super().__init__()
         use_cfg_embedding = dropout_prob > 0
@@ -149,15 +154,15 @@ class LabelEmbedder(nn.Module):
 
 class Attention(nn.Module):
     def __init__(
-        self,
-        dim: int,
-        num_heads: int = 8,
-        qkv_bias: bool = False,
-        qk_norm: bool = False,
-        attn_drop: float = 0.0,
-        proj_drop: float = 0.0,
-        norm_layer: nn.Module = nn.RMSNorm,
-        use_v1_residual: bool = True,
+            self,
+            dim: int,
+            num_heads: int = 8,
+            qkv_bias: bool = False,
+            qk_norm: bool = False,
+            attn_drop: float = 0.0,
+            proj_drop: float = 0.0,
+            norm_layer: nn.Module = nn.RMSNorm,
+            use_v1_residual: bool = True,
     ) -> None:
         super().__init__()
         assert dim % num_heads == 0, "dim should be divisible by num_heads"
@@ -184,11 +189,11 @@ class Attention(nn.Module):
         self.fused_attn = False
 
     def forward(
-        self,
-        x: torch.Tensor,
-        rope: Optional[VisionRotaryEmbeddingFast] = None,
-        rope_ids: Optional[torch.Tensor] = None,
-        v1: Optional[torch.Tensor] = None,
+            self,
+            x: torch.Tensor,
+            rope: Optional[VisionRotaryEmbeddingFast] = None,
+            rope_ids: Optional[torch.Tensor] = None,
+            v1: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Multi-head self-attention with optional 2D RoPE.
 
@@ -208,9 +213,9 @@ class Attention(nn.Module):
         k = self.k(x).reshape(B, N, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
         v = self.v(x).reshape(B, N, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
         q, k = self.q_norm(q), self.k_norm(k)
-        self.v_last = v
-        if v1 is not None:
-            v = self.v1_lambda * v1 + (1.0 - self.v1_lambda) * v
+        # self.v_last = v
+        # if v1 is not None:
+        #     v = self.v1_lambda * v1 + (1.0 - self.v1_lambda) * v
 
         if rope is not None:
             # if rope_ids.shape[1] == 64:
@@ -234,14 +239,15 @@ class Attention(nn.Module):
         x = self.proj_drop(x)
         return x
 
+
 # 激活函数: relu ,sigmoid 》 -grad = 0,sigmoid数值越大=grad掉失越大,tahn，silu
 class SwiGLUFFN(nn.Module):
     def __init__(
-        self,
-        in_features: int,
-        hidden_features: Optional[int] = None,
-        out_features: Optional[int] = None,
-        bias: bool = True,
+            self,
+            in_features: int,
+            hidden_features: Optional[int] = None,
+            out_features: Optional[int] = None,
+            bias: bool = True,
     ) -> None:
         super().__init__()
         out_features = out_features or in_features
@@ -256,10 +262,12 @@ class SwiGLUFFN(nn.Module):
         hidden = F.silu(x1) * x2
         return self.w3(hidden)
 
+
 class SiTBlock(nn.Module):
     """
     A SiT block with adaptive layer norm zero (adaLN-Zero) conditioning.
     """
+
     def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, use_v1_residual: bool = True, **block_kwargs):
         super().__init__()
         self.norm1 = nn.RMSNorm(hidden_size, elementwise_affine=True, eps=1e-6)
@@ -285,12 +293,12 @@ class SiTBlock(nn.Module):
         )
 
     def forward(
-        self,
-        x: torch.Tensor,
-        c: torch.Tensor,
-        feat_rope: Optional[VisionRotaryEmbeddingFast] = None,
-        rope_ids: Optional[torch.Tensor] = None,
-        v1: Optional[torch.Tensor] = None,
+            self,
+            x: torch.Tensor,
+            c: torch.Tensor,
+            feat_rope: Optional[VisionRotaryEmbeddingFast] = None,
+            rope_ids: Optional[torch.Tensor] = None,
+            v1: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         aout = self.adaLN_modulation(c)
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = (
@@ -315,6 +323,7 @@ class FinalLayer(nn.Module):
     """
     The final layer of SiT.
     """
+
     def __init__(self, hidden_size, patch_size, out_channels):
         super().__init__()
         self.norm_final = nn.RMSNorm(hidden_size, elementwise_affine=True, eps=1e-6)
@@ -341,25 +350,26 @@ class SiT(nn.Module):
     """
     Diffusion model with a Transformer backbone + SPRINT sparse-dense residual fusion.
     """
+
     def __init__(
-        self,
-        path_type='edm',
-        input_size=32,
-        patch_size=2,
-        in_channels=4,
-        hidden_size=1152,
-        decoder_hidden_size=768,
-        encoder_depth=8,
-        depth=28,
-        num_heads=16,
-        mlp_ratio=4.0,
-        class_dropout_prob=0.1,
-        num_classes=1000,
-        use_cfg=False,
-        z_dims=[768],
-        projector_dim=2048,
-        cls_token_dim=768,
-        **block_kwargs # fused_attn
+            self,
+            path_type='edm',
+            input_size=32,
+            patch_size=2,
+            in_channels=4,
+            hidden_size=1152,
+            decoder_hidden_size=768,
+            encoder_depth=8,
+            depth=28,
+            num_heads=16,
+            mlp_ratio=4.0,
+            class_dropout_prob=0.1,
+            num_classes=1000,
+            use_cfg=False,
+            z_dims=[768],
+            projector_dim=2048,
+            cls_token_dim=768,
+            **block_kwargs  # fused_attn
     ):
         super().__init__()
         self.path_type = path_type
@@ -385,7 +395,7 @@ class SiT(nn.Module):
         self.sprint_drop_ratio = 0.75
 
         # Path-drop learning probability p (drop whole sparse path during training)
-        self.path_drop_prob = 0.05
+        self.path_drop_prob = 0.99
 
         # [MASK] token for padding dropped positions
         self.mask_token = nn.Parameter(torch.zeros(1, 1, hidden_size))
@@ -393,14 +403,15 @@ class SiT(nn.Module):
         # Fusion projection: concat(ft, g_pad) → fused hidden
         self.fusion_proj = nn.Linear(2 * hidden_size, hidden_size, bias=True)
         # --------------------------------------------------------
-
+        # print("input_size:", input_size)
         self.x_embedder = PatchEmbed(
             input_size, patch_size, in_channels, hidden_size, bias=True
-            )
-        self.t_embedder = TimestepEmbedder(hidden_size) # timestep embedding type
+        )
+        self.t_embedder = TimestepEmbedder(hidden_size)  # timestep embedding type
         # self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
         approx_gelu = lambda: nn.GELU(approximate="tanh")
-        self.y_embedder = CaptionEmbedder(in_channels=768, hidden_size=hidden_size, uncond_prob=0.1, act_layer=approx_gelu, token_num=self.contxt_len)
+        self.y_embedder = CaptionEmbedder(in_channels=768, hidden_size=hidden_size, uncond_prob=0.1,
+                                          act_layer=approx_gelu, token_num=self.contxt_len)
         num_patches = self.x_embedder.num_patches
         # Will use fixed sin-cos embedding:
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
@@ -420,10 +431,9 @@ class SiT(nn.Module):
         self.blocks = nn.ModuleList(blocks)
         self.projectors = nn.ModuleList([
             build_mlp(hidden_size, projector_dim, z_dim) for z_dim in z_dims
-            ])
+        ])
 
         self.final_layer = FinalLayer(decoder_hidden_size, patch_size, self.out_channels)
-
 
         # self.cls_projectors2 = nn.Linear(in_features=cls_token_dim, out_features=hidden_size, bias=True)
         # self.wg_norm = nn.RMSNorm(hidden_size, elementwise_affine=True, eps=1e-6)
@@ -452,7 +462,7 @@ class SiT(nn.Module):
         # Initialize (and freeze) pos_embed by sin-cos embedding:
         pos_embed = get_2d_sincos_pos_embed(
             self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** 0.5), cls_token=0, extra_tokens=0
-            )
+        )
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
@@ -600,19 +610,17 @@ class SiT(nn.Module):
         # 1) Encoder fθ on all tokens (dense, shallow)
         # ------------------------------------------------------------------
         rope_ids_enc = rope_ids_full
-        
-        #print("y:", y.shape)
-        #print("x:", x.shape)
 
-        x_enc = torch.cat([y, x], dim=1)  #[77 + 256 = 333]
+        x_enc = torch.cat([y, x], dim=1)  # [77 + 256 = 333]
         # print("x:", x)
         # x_enc.register_hook(save_grad('encoder_diff:'))
         v1_full = None
         for i in range(self.num_f):
-            x_enc = self.blocks[i](x_enc, c, self.feat_rope, rope_ids_enc, v1=v1_full)  # (N, T, D)
+            x_enc = self.blocks[i](x_enc, c, self.feat_rope, rope_ids_enc)  # (N, T, D)
 
-            if v1_full is None:
-                v1_full = self.blocks[i].attn.v_last
+            # if v1_full is None:
+            #     v1_full = self.blocks[i].attn.v_last
+            # print("i:", i, v1_full)
         # print("v1_full:", v1_full)
         # Use encoder output for z-projections (REPA / SPRINT z_t)
         zs_in = x_enc[:, self.contxt_len: :]
@@ -626,7 +634,6 @@ class SiT(nn.Module):
         # ------------------------------------------------------------------
         if self.training:
             x_in = x_enc * 1
-            # x_in.register_hook(save_grad2('x_in_diff:'))
             x_sparse, ids_keep = self._drop_tokens(x_in, self.contxt_len, self.sprint_drop_ratio)
         else:
             x_sparse = x_enc
@@ -637,33 +644,32 @@ class SiT(nn.Module):
         else:
             rope_ids_sparse = rope_ids_full
 
-        if ids_keep is not None:
-            vs_head = v1_full[:, :, :self.contxt_len, :]
-            v1_sparse = v1_full[:, :, self.contxt_len:, :].gather(
-                2,
-                ids_keep[:, None, :, None].expand(-1, v1_full.size(1), -1, v1_full.size(-1)),
-            )
-            v1_sparse = torch.cat((vs_head, v1_sparse), dim=2)
-        else:
-            v1_sparse = v1_full
+        # if ids_keep is not None:
+        #     vs_head = v1_full[:, :, :self.contxt_len, :]
+        #     v1_sparse = v1_full[:, :, self.contxt_len:, :].gather(
+        #         2,
+        #         ids_keep[:, None, :, None].expand(-1, v1_full.size(1), -1, v1_full.size(-1)),
+        #     )
+        #     v1_sparse = torch.cat((vs_head, v1_sparse), dim=2)
+        # else:
+        #     v1_sparse = v1_full
 
         # ------------------------------------------------------------------
         # 3) Middle blocks gθ on sparse tokens
         # ------------------------------------------------------------------
         x_mid = x_sparse
+
         # print("x_mid_input:", x_mid)
         for i in range(self.num_f, self.num_f + self.num_g):
-            x_mid = self.blocks[i](x_mid, c, self.feat_rope, rope_ids_sparse, v1=v1_sparse)  # (N, T_keep, D)
+            x_mid = self.blocks[i](x_mid, c, self.feat_rope, rope_ids_sparse)  # (N, T_keep, D)
 
         # print("x_mid:", x_mid.shape, x_mid)
-        # x_mid.register_hook(save_grad('dx_mid:'))
+        # x_mid.register_hook(save_grad2('dx_mid:'))
         # self.mask_token.register_hook(save_grad('mask_token:'))
         # ------------------------------------------------------------------
         # 4) Pad back to full length with [MASK] to get g_pad
         # ------------------------------------------------------------------
         g_pad = self._pad_with_mask(x_mid, ids_keep, TT=self.contxt_len, T_full=T)
-
-        # g_pad.register_hook(save_grad('dg_pad1:'))
 
         # ------------------------------------------------------------------
         # 5) Path-drop learning
@@ -700,7 +706,7 @@ class SiT(nn.Module):
             if drop_path.item() < self.path_drop_prob:
                 # Keep gradient flow but zero out the contribution
                 g_pad = g_pad * 0.0 + self.mask_token.expand_as(g_pad)
-        elif uncond: # Drop path for all samples
+        elif uncond:  # Drop path for all samples
             g_pad = g_pad * 0.0 + self.mask_token.expand_as(g_pad)
 
         # print("g_pad:", g_pad)
@@ -709,16 +715,18 @@ class SiT(nn.Module):
         # 6) Sparse–dense residual fusion: h_in = Fusion(ft, g_pad)
         # ------------------------------------------------------------------
         encoder_x = x_enc * 1
+
         f1 = g_pad * 1
         # f1.register_hook(save_grad('f1:'))
         h_in = self._sprint_fuse(encoder_x, f1)  # (N, T, D)
+
 
         # ------------------------------------------------------------------
         # 7) Decoder hθ on fused representation
         # ------------------------------------------------------------------
         x_dec = h_in
         for i in range(self.num_f + self.num_g, self.depth):
-            x_dec = self.blocks[i](x_dec, c, self.feat_rope, rope_ids_full, v1=v1_full)
+            x_dec = self.blocks[i](x_dec, c, self.feat_rope, rope_ids_full)
 
         img_o = x_dec[:, self.contxt_len:, ...]
 
@@ -758,7 +766,7 @@ def get_2d_sincos_pos_embed_from_grid(embed_dim, grid):
     emb_h = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[0])  # (H*W, D/2)
     emb_w = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[1])  # (H*W, D/2)
 
-    emb = np.concatenate([emb_h, emb_w], axis=1) # (H*W, D)
+    emb = np.concatenate([emb_h, emb_w], axis=1)  # (H*W, D)
     return emb
 
 
@@ -771,60 +779,82 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
     assert embed_dim % 2 == 0
     omega = np.arange(embed_dim // 2, dtype=np.float64)
     omega /= embed_dim / 2.
-    omega = 1. / 10000**omega  # (D/2,)
+    omega = 1. / 10000 ** omega  # (D/2,)
 
     pos = pos.reshape(-1)  # (M,)
     out = np.einsum('m,d->md', pos, omega)  # (M, D/2), outer product
 
-    emb_sin = np.sin(out) # (M, D/2)
-    emb_cos = np.cos(out) # (M, D/2)
+    emb_sin = np.sin(out)  # (M, D/2)
+    emb_cos = np.cos(out)  # (M, D/2)
 
     emb = np.concatenate([emb_sin, emb_cos], axis=1)  # (M, D)
     return emb
+
 
 #################################################################################
 #                                   SiT Configs                                  #
 #################################################################################
 
 def SiT_XL_1(**kwargs):
-    return SiT(depth=28, hidden_size=1152, decoder_hidden_size=1152, patch_size=1, num_heads=16, encoder_depth=8, **kwargs)
+    return SiT(depth=28, hidden_size=1152, decoder_hidden_size=1152, patch_size=1, num_heads=16, encoder_depth=8,
+               **kwargs)
+
 
 def SiT_XL_2(**kwargs):
-    return SiT(depth=28, hidden_size=1152, decoder_hidden_size=1152, patch_size=2, num_heads=16, encoder_depth=8, **kwargs)
+    return SiT(depth=28, hidden_size=1152, decoder_hidden_size=1152, patch_size=2, num_heads=16, encoder_depth=8,
+               **kwargs)
+
 
 def SiT_XL_4(**kwargs):
-    return SiT(depth=28, hidden_size=1152, decoder_hidden_size=1152, patch_size=4, num_heads=16, encoder_depth=8, **kwargs)
+    return SiT(depth=28, hidden_size=1152, decoder_hidden_size=1152, patch_size=4, num_heads=16, encoder_depth=8,
+               **kwargs)
+
 
 def SiT_L_1(**kwargs):
-    return SiT(depth=24, hidden_size=1024, decoder_hidden_size=1024, patch_size=1, num_heads=16, encoder_depth=8, **kwargs)
+    return SiT(depth=24, hidden_size=1024, decoder_hidden_size=1024, patch_size=1, num_heads=16, encoder_depth=8,
+               **kwargs)
+
 
 def SiT_L_2(**kwargs):
-    return SiT(depth=24, hidden_size=1024, decoder_hidden_size=1024, patch_size=2, num_heads=16, encoder_depth=8, **kwargs)
+    return SiT(depth=24, hidden_size=1024, decoder_hidden_size=1024, patch_size=2, num_heads=16, encoder_depth=8,
+               **kwargs)
+
 
 def SiT_L_4(**kwargs):
-    return SiT(depth=24, hidden_size=1024, decoder_hidden_size=1024, patch_size=4, num_heads=16, encoder_depth=8, **kwargs)
+    return SiT(depth=24, hidden_size=1024, decoder_hidden_size=1024, patch_size=4, num_heads=16, encoder_depth=8,
+               **kwargs)
+
 
 def SiT_B_1(**kwargs):
-    return SiT(depth=12, hidden_size=768, decoder_hidden_size=768, patch_size=1, num_heads=12, encoder_depth=4, **kwargs)
+    return SiT(depth=12, hidden_size=768, decoder_hidden_size=768, patch_size=1, num_heads=12, encoder_depth=4,
+               **kwargs)
+
 
 def SiT_B_2(**kwargs):
-    return SiT(depth=12, hidden_size=768, decoder_hidden_size=768, patch_size=2, num_heads=12, encoder_depth=4, **kwargs)
+    return SiT(depth=12, hidden_size=768, decoder_hidden_size=768, patch_size=2, num_heads=12, encoder_depth=4,
+               **kwargs)
+
 
 def SiT_B_4(**kwargs):
-    return SiT(depth=12, hidden_size=768, decoder_hidden_size=768, patch_size=4, num_heads=12, encoder_depth=4, **kwargs)
+    return SiT(depth=12, hidden_size=768, decoder_hidden_size=768, patch_size=4, num_heads=12, encoder_depth=4,
+               **kwargs)
+
 
 def SiT_S_1(**kwargs):
     return SiT(depth=12, hidden_size=384, patch_size=1, num_heads=6, encoder_depth=4, **kwargs)
 
+
 def SiT_S_2(**kwargs):
     return SiT(depth=12, hidden_size=384, patch_size=2, num_heads=6, encoder_depth=4, **kwargs)
+
 
 def SiT_S_4(**kwargs):
     return SiT(depth=12, hidden_size=384, patch_size=4, num_heads=6, encoder_depth=4, **kwargs)
 
+
 SiT_models = {
-    'SiT-XL/1': SiT_XL_1,  'SiT-XL/2': SiT_XL_2,  'SiT-XL/4': SiT_XL_4,
-    'SiT-L/1':  SiT_L_1,   'SiT-L/2':  SiT_L_2,   'SiT-L/4':  SiT_L_4,
-    'SiT-B/1':  SiT_B_1,   'SiT-B/2':  SiT_B_2,   'SiT-B/4':  SiT_B_4,
-    'SiT-S/1':  SiT_S_1,   'SiT-S/2':  SiT_S_2,   'SiT-S/4':  SiT_S_4,
+    'SiT-XL/1': SiT_XL_1, 'SiT-XL/2': SiT_XL_2, 'SiT-XL/4': SiT_XL_4,
+    'SiT-L/1': SiT_L_1, 'SiT-L/2': SiT_L_2, 'SiT-L/4': SiT_L_4,
+    'SiT-B/1': SiT_B_1, 'SiT-B/2': SiT_B_2, 'SiT-B/4': SiT_B_4,
+    'SiT-S/1': SiT_S_1, 'SiT-S/2': SiT_S_2, 'SiT-S/4': SiT_S_4,
 }
