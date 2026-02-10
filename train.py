@@ -130,6 +130,13 @@ def requires_grad(model, flag=True):
     for p in model.parameters():
         p.requires_grad = flag
 
+
+def get_lr(current_step, total_steps, lr):
+    """Cosine annealing learning rate schedule.
+    Decays from lr to 0.1*lr following a cosine curve.
+    """
+    return lr * (0.1 + 0.45 * (1 + math.cos(math.pi * current_step / total_steps)))
+
 #################################################################################
 #                                  Training Loop                                #
 #################################################################################
@@ -396,6 +403,12 @@ def main(args):
                 #if accelerator.sync_gradients:
                     #params_to_clip = model.parameters()
                     #grad_norm = accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
+
+                # Update learning rate with cosine annealing
+                current_lr = get_lr(global_step, args.max_train_steps, args.learning_rate)
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = current_lr
+
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
 
@@ -424,7 +437,8 @@ def main(args):
                 "loss_mean": accelerator.gather(loss_mean).mean().detach().item(),
                 "proj_loss": accelerator.gather(proj_loss_mean).mean().detach().item(),
                 #"loss_mean_cls": accelerator.gather(loss_mean_cls).mean().detach().item(),
-                "cfm_loss": accelerator.gather(cfm_loss_mean).mean().detach().item()
+                "cfm_loss": accelerator.gather(cfm_loss_mean).mean().detach().item(),
+                "lr": current_lr  # Log current learning rate
                 #"grad_norm": accelerator.gather(grad_norm).mean().detach().item()
             }
 
